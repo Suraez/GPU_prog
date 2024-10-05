@@ -21,6 +21,16 @@ int mat_mult(double *A, double *B, double *C, int n, int n_local);
 void init_data();
 int check_result();
 
+//  void print_matrix(double *matrix, int rows, int cols) {
+//   for (int i = 0; i < rows; i++) {
+//     for (int j = 0; j < cols; j++) {
+//       printf("%lf ", matrix[i * cols + j]);
+//     }
+//     printf("\n");
+//   }
+//   printf("\n");
+// }
+
 int main(int argc, char *argv[]) {
     int i, n = 64,n_sq, flag, my_work;
     int my_rank, num_procs = 1;
@@ -116,6 +126,10 @@ int main(int argc, char *argv[]) {
         printf("Total time %d: %f seconds.\n", my_rank, elapsed);
         }
     }
+    // printf("here is the matrix C\n");
+    // print_matrix(C, n, n);
+    // printf("here is the matrix D\n");
+    // print_matrix(D, n, n);
     MPI_Finalize();
     return 0;
 }
