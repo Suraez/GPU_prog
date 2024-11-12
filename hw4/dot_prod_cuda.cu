@@ -3,8 +3,8 @@
    Homework 4 MPI+CUDA on dot product
    10/21/2024
    Andrew Sohn
+   Submitted by: Suraj Kumar Ojha
  */
-
 #include <iostream>
 using std::cerr;
 using std::endl;
@@ -18,13 +18,13 @@ using std::endl;
 #include <cuda_profiler_api.h>
 
 // Helper functions and utilities to work with CUDA
-#include <helper_functions.h>
-#include <helper_cuda.h>
+// #include <helper_functions.h>
+// #include <helper_cuda.h>
 
 #include <unistd.h>
 #include <sys/time.h>
 
-// #include "dot_decl.h"
+#include "dot_prod_cuda.h"
 
 #define THREADS_PER_BLOCK 1024
 
@@ -68,12 +68,39 @@ int dot_product_cpu(int rank, int n, int *x, int *y){
 
 // Accumulate using binary tree reduciton
 __global__ void dot_prod_tree_reduction( int *a, int *b, int *c,int my_work, int log_n){
-  // fill in
+   __shared__ int shared_data[THREADS_PER_BLOCK];
+    
+    int tid = threadIdx.x;
+    int global_index = blockIdx.x * blockDim.x + tid;
+    
+    if (global_index < my_work) {
+        shared_data[tid] = a[global_index] * b[global_index];
+    } else {
+        shared_data[tid] = 0;
+    }
+    __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+        if (tid < stride) {
+            shared_data[tid] += shared_data[tid + stride];
+        }
+        __syncthreads();
+    }
+    
+    if (tid == 0) {
+        c[blockIdx.x] = shared_data[0];
+    }
 }
 
 // Thd 0 accumulates
 __global__ void dot_prod_serial( int *a, int *b, int *c, int n,int my_work, int log_n) {
-  // fill in
+  int tid = threadIdx.x;
+    int global_index = blockIdx.x * blockDim.x + tid;
+
+    if (global_index < my_work) {
+        // Multiply corresponding elements and accumulate
+        atomicAdd(&c[blockIdx.x], a[global_index] * b[global_index]);
+    }
 }
 
 /**
@@ -123,7 +150,7 @@ int dot_product_cuda(int my_rank,int my_work,int *h_A,int *h_B) {
 
   int log_n = dev_my_log(nthds);
   printf("rank=%d: CUDA kernel launch with %d blocks of %d threads\n", my_rank,nblks, nthds);
-  //  dot_prod_tree_reduction<<<nblks, nthds>>>(d_A, d_B, d_C_nblks,my_work,log_n);
+  dot_prod_tree_reduction<<<nblks, nthds>>>(d_A, d_B, d_C_nblks,my_work,log_n);
   //  dot_prod_serial<<<nblks, nthds>>>(d_A, d_B, d_C_nblks, nthds,my_work,log_n);
   cudaMemcpy(h_C_nblks,d_C_nblks,sizeof( int )*nblks, cudaMemcpyDeviceToHost);
 

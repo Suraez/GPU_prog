@@ -19,7 +19,7 @@ using std::cerr;
 using std::endl;
 
 // User include
-// #include "dot_decl.h"
+#include "dot_prod_cuda.h"
 
 #define MASTER 0
 #define ROOT 0
@@ -33,14 +33,46 @@ using std::endl;
 
 int vec_A[MAX_N], vec_B[MAX_N];
 
+int dot_product_host(int nprocs, int n, int *x, int *y){
+  int i=0,j=0,iii=0; int prod=0,bprod=0;
+  int my_work;
+
+  my_work = n/nprocs;
+
+  int nblks = my_work / THREADS_PER_BLOCK;
+  int nthds = THREADS_PER_BLOCK;
+  if (n<THREADS_PER_BLOCK) {
+    nblks = 1;
+    nthds = my_work;
+  }
+  for (i=0;i<n;i++) prod = prod + *x++ * *y++;
+
+  return prod;
+}
+
+// Initialize an array with random data (between 0 and 15)
+void init_vec(int *data, int dataSize) {
+  srand(time(NULL));
+  for (int i = 0; i < dataSize; i++) *data++ = rand() & 0xf;
+}
+
+int my_log(int val) {
+  int i;
+  int log_val=0;
+
+  for (i=val;i>1;i=i>>1) log_val++;
+
+  return log_val;
+}
+
 // Host code
 int main(int argc, char *argv[]) {
   // Dimensions of the dataset
   int blockSize = 256;
   int gridSize = 10000;
   int dataSizePerNode = gridSize * blockSize;
-  int i, n=0, order=10, max_n=0;
-  int vec_size = MAX_ORDER;
+  int i, n=1 << MAX_ORDER, order=10, max_n=0;
+  int vec_size = 1 << MAX_ORDER;
   int my_work,my_rank,nprocs;;
 
   int my_prod=0,lst_prods[MAX_PROCS],prod=0,prod_host=0,prod_dev=0;
@@ -77,21 +109,34 @@ int main(int argc, char *argv[]) {
 
   printf("rank=%d: nprocs=%d n=%d my_work=%d/%d=%d\n",my_rank,nprocs,n,n,nprocs,my_work);
 
-  init_vec(vec_A, vec_size);
-  init_vec(vec_B, vec_size);
+  if (my_rank == MASTER) {
+      init_vec(vec_A, vec_size);
+      init_vec(vec_B, vec_size);
+  }
+
+    int *local_vec_A = new int[my_work];
+    int *local_vec_B = new int[my_work];
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
   gettimeofday(&timecheck, NULL);
   mpi_start = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
 
   //  MPI_Scatter(vec_A, ... );
-
   //  MPI_Scatter(vec_B, ... );
+  MPI_Scatter(vec_A, my_work, MPI_INT, local_vec_A, my_work, MPI_INT, MASTER, MPI_COMM_WORLD);
+  MPI_Scatter(vec_B, my_work, MPI_INT, local_vec_B, my_work, MPI_INT, MASTER, MPI_COMM_WORLD);
 
-  my_prod = dot_product_cuda(my_rank,my_work,vec_A,vec_B);
+  my_prod = dot_product_cuda(my_rank,my_work,local_vec_A,local_vec_B);
+
 
   //  MPI_Gather(...)
 
-  prod_dev = sum(nprocs,lst_prods);
+  MPI_Gather(&my_prod, 1, MPI_INT, lst_prods, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+  if (my_rank == MASTER) {
+    prod_dev = sum(nprocs, lst_prods);
+  }
+
 
   gettimeofday(&timecheck, NULL);
   mpi_end = (long)timecheck.tv_sec * 1000 + (long)timecheck.tv_usec / 1000;
@@ -126,37 +171,7 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-int dot_product_host(int nprocs, int n, int *x, int *y){
-  int i=0,j=0,iii=0; int prod=0,bprod=0;
-  int my_work;
 
-  my_work = n/nprocs;
-
-  int nblks = my_work / THREADS_PER_BLOCK;
-  int nthds = THREADS_PER_BLOCK;
-  if (n<THREADS_PER_BLOCK) {
-    nblks = 1;
-    nthds = my_work;
-  }
-  for (i=0;i<n;i++) prod = prod + *x++ * *y++;
-
-  return prod;
-}
-
-// Initialize an array with random data (between 0 and 15)
-void init_vec(int *data, int dataSize) {
-  srand(time(NULL));
-  for (int i = 0; i < dataSize; i++) *data++ = rand() & 0xf;
-}
-
-int my_log(int val) {
-  int i;
-  int log_val=0;
-
-  for (i=val;i>1;i=i>>1) log_val++;
-
-  return log_val;
-}
 
 /*************************************************
   End of file
